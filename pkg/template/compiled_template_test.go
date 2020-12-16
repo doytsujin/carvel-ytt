@@ -11,7 +11,7 @@ import (
 	"github.com/k14s/ytt/pkg/template"
 )
 
-func TestTemplatePlainStarlark(t *testing.T) {
+func TestEvalExecutesStarlarkAndReturnsGlobals(t *testing.T) {
 	data := `
 def hello():
   return "hello"
@@ -40,7 +40,31 @@ a = hello()
 	}
 }
 
-func TestTemplateIgnoreIndentationExceptContinuedLines(t *testing.T) {
+func TestEvalIgnoresIndentationInStarlark(t *testing.T) {
+	data := `
+		if True:
+a = "evaluated"
+		end
+`
+	instructions := template.NewInstructionSet()
+	compiledTemplate := template.NewCompiledTemplate(
+		"stdin", template.NewCodeFromBytes([]byte(data), instructions),
+		instructions, template.NewNodes(), template.EvaluationCtxDialects{})
+
+	loader := template.NewNoopCompiledTemplateLoader(compiledTemplate)
+	thread := &starlark.Thread{Name: "test", Load: loader.Load}
+
+	resultGlobals, _, err := compiledTemplate.Eval(thread, loader)
+	if err != nil {
+		t.Fatalf("Evaluating starlark template: %s", err)
+	}
+
+	if resultGlobals["a"] != starlark.String("evaluated") {
+		t.Fatalf("Expected variable 'a' to have been set, but was \"%#v\"", resultGlobals["a"])
+	}
+}
+
+func TestEvalPreservesIndentationOfContinuedLines(t *testing.T) {
 	data := `
 		if True:
 	multiline = "[\
@@ -65,7 +89,7 @@ func TestTemplateIgnoreIndentationExceptContinuedLines(t *testing.T) {
 	}
 }
 
-func TestLine1StarlarkError(t *testing.T) {
+func TestEvalReturnsErrorWhenFailsToCompile(t *testing.T) {
 	data := `badsyntax`
 	instructions := template.NewInstructionSet()
 	compiledTemplate := template.NewCompiledTemplate(
